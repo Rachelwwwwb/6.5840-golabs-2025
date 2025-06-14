@@ -1,6 +1,11 @@
 package mr
 
-import "fmt"
+import (
+	"fmt"
+	"io/ioutil"
+	"os"
+	"sort"
+)
 import "log"
 import "net/rpc"
 import "hash/fnv"
@@ -10,6 +15,13 @@ type KeyValue struct {
 	Key   string
 	Value string
 }
+
+type ByKey []KeyValue
+
+// for sorting by key.
+func (a ByKey) Len() int           { return len(a) }
+func (a ByKey) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a ByKey) Less(i, j int) bool { return a[i].Key < a[j].Key }
 
 // use ihash(key) % NReduce to choose the reduce
 // task number for each KeyValue emitted by Map.
@@ -22,33 +34,37 @@ func ihash(key string) int {
 // main/mrworker.go calls this function.
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
-
-	// Your worker implementation here.
-
-	// uncomment to send the Example RPC to the coordinator.
-	// CallExample()
+	args := &TaskArgs{}
+	for {
+		if PullTask(args, mapf()) {
+			break
+		}
+	}
 
 }
 
-// example function to show how to make an RPC call to the coordinator.
-//
-// the RPC argument and reply types are defined in rpc.go.
-func CallExample() {
-
-	args := TaskArgs{}
+func PullTask(args *TaskArgs, mapf func(string, string) []KeyValue) bool {
 	reply := TaskReply{}
 
-	// send the RPC request, wait for the reply.
-	// the "Coordinator.Example" tells the
-	// receiving server that we'd like to call
-	// the Example() method of struct Coordinator.
 	ok := call("Coordinator.MapReduceHandler", &args, &reply)
 	if ok {
-		// reply.Y should be 100.
-		fmt.Printf("reply.Y %v\n", reply.Y)
+		if reply.Done {
+			return true
+		}
+		args.WorkerId = reply.WorkerId
+
+		switch reply.TaskType {
+		case 0:
+			handleMapTask(&reply, mapf)
+		case 1:
+			handleReduceTask(&reply)
+		}
+		args.Status = 1
+		args.File = reply.InputFile
 	} else {
 		fmt.Printf("call failed!\n")
 	}
+	return false
 }
 
 // send an RPC request to the coordinator, wait for the response.
@@ -70,4 +86,32 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 
 	fmt.Println(err)
 	return false
+}
+
+func handleMapTask(reply *TaskReply, mapf func(string, string) []KeyValue) {
+	// read from the file
+	intermediate := []KeyValue{}
+	filename := reply.InputFile
+	file, err := os.Open(filename)
+	if err != nil {
+		log.Fatalf("cannot open %v", filename)
+	}
+	content, err := ioutil.ReadAll(file)
+	if err != nil {
+		log.Fatalf("cannot read %v", filename)
+	}
+	file.Close()
+	kva := mapf(filename, string(content))
+	intermediate = append(intermediate, kva...)
+
+	// sorting
+	sort.Sort(ByKey(intermediate))
+
+	oname := "mr-" + reply.MapId + "-" + reply.ReduceId
+	ofile, _ := os.Create(oname)
+
+}
+
+func handleReduceTask(reply *TaskReply) {
+
 }

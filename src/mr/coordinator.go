@@ -17,7 +17,7 @@ type Coordinator struct {
 }
 
 // Your code here -- RPC handlers for the worker to call.
-
+// TODO: add TaskType
 func (c *Coordinator) MapReduceHandler(args *TaskArgs, reply *TaskReply) error {
 	workId := args.WorkerId
 	if _, exists := c.workerStatus[args.WorkerId]; !exists {

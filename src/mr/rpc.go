@@ -19,9 +19,10 @@ type TaskArgs struct {
 type TaskReply struct {
 	TaskID    int
 	InputFile string
-	NMap      int
+	MapId     int
 	ReduceId  int
 	WorkerId  int
+	TaskType  int // 0 map, 1 reduce
 	Done      bool
 }
 
